@@ -1,0 +1,298 @@
+<!DOCTYPE HTML><html>
+  <!-- 
+    MIT License
+    Copyright (c) 2020 mrbubble62
+    Source: https://github.com/mrbubble62/ESP-Humidifer 
+  -->
+  <head>
+  <title>Humidifier</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <link rel="stylesheet" type="text/css" href="lc_switch.css">
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <script src="spinner.min.js" type="text/javascript"></script>
+  <script src="lc_switch.js" type="text/javascript"></script>
+  <style>
+  body {
+    min-width: 310px;
+    max-width: 800px;
+    height: 700px;
+    margin: 0 auto;
+    text-align: center;
+    font-family: 'Roboto';
+  }
+  h2 {
+    font-family: Arial;
+    font-size: 2.5rem;
+    text-align: center;
+    margin: 0 auto;
+    margin-bottom: 3px;
+  }
+  h3 {
+    text-align: center;
+    margin: 0 auto;
+  }
+  </style>
+  <script>
+    var setpoint;
+    var pwmwindow;
+
+    function SendSetpoint() {
+        var sp = document.getElementsByClassName("dp-numberPicker-input");
+        var xhttp = new XMLHttpRequest();
+        xhttp.open("GET", "/sp?val=" + sp["0"].value, true);
+        xhttp.send();
+    };
+
+    $(document).ready(function(){
+      // initialize number picker
+      $("#number-picker").dpNumberPicker({
+        min: 0, // Minimum value.
+        max: 100, // Maximum value.
+        value: setpoint, // Initial value
+        step: 1, // Incremental/decremental step on up/down change.
+        format: false,
+        editable: true,
+        addText: "+",
+        subText: "-",
+        formatter: function(val){return val;},
+        beforeIncrease: function(){},
+        afterIncrease: function(){},
+        beforeDecrease: function(){},
+        afterDecrease: function(){},
+        beforeChange: function(){},
+        afterChange: function(){},
+        onMin: function(){},
+        onMax: function(){}
+      });
+
+      // initialize setpoint
+      var xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+          setpoint = parseInt(this.responseText);
+          document.getElementById("number-picker").setValue(setpoint);
+        };    
+      }
+      xhttp.open("GET", "/sp", true);
+      xhttp.send();
+      // now we can attach the event
+      $("#number-picker").dpNumberPicker({afterChange: function(){SendSetpoint();}});
+
+      //initialize powerswitch
+      $('input').lc_switch(); 
+      // get initial power state
+      var xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+          if(this.responseText=="1")
+            $('input').lcs_on();
+          else
+            $('input').lcs_off();
+        }
+      };
+      xhttp.open("GET", "/power", true);
+      xhttp.send();  
+
+      //attach power switch toggle event
+      $('body').delegate('.lcs_check', 'lcs-statuschange', function() {
+        var status = ($(this).is(':checked')) ? 'checked' : 'unchecked';
+        var xhttp = new XMLHttpRequest();
+        var state = (status=="checked")?"1":"0"
+        xhttp.open("GET", "/power?state=" + state, true);
+        xhttp.send();
+      });
+
+      getData();
+      getConfig();
+      setInterval(function ( ) {
+        getData();
+      }, 1000 );
+    });
+  </script>
+</head>
+<body>
+      <h2>Marykay's Humidity Control</h2>
+      <div id="row1">
+        <input type="checkbox" checked="checked" name="power" value="1" class="lcs_check" autocomplete="off"  />
+        &nbsp;&nbsp;Currently:<span id="hval"> </span>% <div class="led"></div>
+      </div>
+        <div id="chart-humidity" class="container"></div>
+        <h3>Setpoint</h3>
+      <div id="number-picker"></div> 
+      <div style="font-size: small;">
+      <div id="config"></div> 
+      PWM:<span id="pwmout"> </span>% <span id="deltat"> </span>s
+      </div>
+    </body>
+    <script>
+    //Highcharts.seriesTypes.line.prototype.getPointSpline = Highcharts.seriesTypes.spline.prototype.getPointSpline;
+    var chartH = new Highcharts.Chart({
+      chart:{ 
+        renderTo:'chart-humidity'
+      },
+      title: { text: '' },
+      series: [{
+        type: 'line',
+        lineWidth: 4,
+        scrollablePlotArea: {
+              minWidth: 700,
+              scrollPositionX: 1
+        },
+        name: 'Humidity',
+        showInLegend: true,
+        data: [],
+        dataGrouping: {
+            enabled: true,
+            groupPixelWidth: 50,
+            smoothed: true
+        },
+      },
+      { //temperature
+        type: 'line',
+        name: 'Temperature',
+        lineWidth: 2,
+        color: '#FF0000',
+        marker: { enabled: false },
+        showInLegend: true,
+        data: [],
+        dataGrouping: {
+            enabled: true,
+            groupPixelWidth: 50,
+            smoothed: true
+        },
+        yAxis: 1
+      }
+      ,
+      { //relay
+        name: 'Relay',
+        type: 'line',
+        marker: { enabled: false },
+        showInLegend: true,
+        lineWidth: 1,
+        color: '#00FF00',
+        data: [],
+        yAxis: 2
+      },
+      { //err
+        name: 'Error',
+        type: 'line',
+        lineWidth: 0,
+        marker: { enabled: false },
+        showInLegend: false,
+        data: [],
+        yAxis: 3
+      }
+    ],
+      plotOptions: {
+        marker: { enabled: false },
+        spline: {
+            lineWidth: 4,
+            marker: { enabled: false },
+            pointInterval: 60000 // 1 min
+        }
+      },
+      xAxis: {
+        type: 'datetime',
+        dateTimeLabelFormats: { second: '%H:%M:%S' },
+        labels: {
+            overflow: 'justify'
+        },
+        scrollbar: {
+            enabled: true
+        }
+      },
+      yAxis: [{
+        title: { text: 'Humidity (%)' },
+        lineWidth: 4,
+        max: 70, 
+        min: 20
+      },
+      {
+        title: {  text: 'Temperature' },
+        max: 100, 
+        min: 40,
+        lineWidth: 2,
+        gridLineWidth : 0,
+        alignTicks : false,
+        opposite: true
+      },
+      { //relay
+        title: {  text: '' },
+        labels: {
+            enabled: false
+        },
+        gridLineWidth : 0,
+        max: 15, //keep out of other data
+        min: 0
+      },
+      { //err
+        title: {  text: '' },
+        labels: {
+            enabled: false
+        },
+        gridLineWidth : 0
+      }
+    ],
+      legend: {
+          y: 5,
+          padding: 3,
+          itemMarginTop: 5
+      },
+      credits: { enabled: false }
+    });
+
+    function getConfig(){
+      var xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+          document.getElementById('config').textContent=this.responseText;
+         }
+      };
+      xhttp.open("GET", "/config", true);
+      xhttp.send();
+    }
+  
+    function getData(){
+      var xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+          var data = this.responseText.split(',');
+          var x = (new Date()).getTime(),
+              y1 = parseFloat(parseFloat(data[0]).toFixed(1)),
+              y2 = parseFloat(parseFloat(data[1]).toFixed(1)), //Fahrenheit
+              y4 = parseInt(data[2]), // err
+              y3 = parseInt(data[3]), // relay 1,0
+              pwmduty = parseInt(data[4]), //duty cycle
+              deltat = parseInt(data[5]);
+          document.getElementById('hval').textContent=y1;
+          document.getElementById('pwmout').textContent = pwmduty;
+          document.getElementById('deltat').textContent = deltat;
+          if(chartH.series[0].data.length > 8640) { //keep 24 hours
+            chartH.series[0].addPoint([x, y1], true, true, true);
+            chartH.series[1].addPoint([x, y2], true, true, true);
+            chartH.series[2].addPoint([x, y3], true, true, true);
+            chartH.series[3].addPoint([x, y4], true, true, true);
+          } else {
+            chartH.series[0].addPoint([x, y1], true, false, true);
+            chartH.series[1].addPoint([x, y2], true, false, true);
+            chartH.series[2].addPoint([x, y3], true, false, true);
+            chartH.series[3].addPoint([x, y4], true, false, true);
+          }
+          if(y3==1 && !$('.led').hasClass('led-green'))
+            $('.led').toggleClass('led-green');
+          else if(y3==0)
+            $('.led').removeClass('led-green');
+        }
+      };
+      xhttp.open("GET", "/data", true);
+      xhttp.send();
+    }
+
+    </script>
+</html>
