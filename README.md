@@ -5,7 +5,7 @@ PlatformIO ESP8266 project
 
 Control power to a humidifier, a relay turns power to the humidifier on and off to reach the desired setpoint. All interaction is via web interface.
 
-![screenshot](/screenshot.jpg "screenshot")
+![screenshot](/screenshot.png "screenshot")
 
 On initial startup look for HUMIDIFIER on WiFi, select your AP SSID and enter the password.  
 IMPORTANT Change the OTA password now.
